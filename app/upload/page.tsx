@@ -37,10 +37,8 @@ export default function UploadPage() {
   }, [])
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const selectedFiles = Array.from(e.target.files)
-      setFiles(prev => [...prev, ...selectedFiles])
-    }
+    const selectedFiles = Array.from(e.target.files ?? [])
+    setFiles(prev => [...prev, ...selectedFiles])
   }, [])
 
   const removeFile = useCallback((index: number) => {
@@ -90,7 +88,7 @@ export default function UploadPage() {
             Upload Security Questionnaire
           </h1>
           <p className="text-gray-600">
-            Upload your PDF or Word document and we'll extract the questions using AI
+            Upload your PDF or DOCX security questionnaire and our AI will automatically generate answers.
           </p>
         </div>
 
@@ -99,119 +97,82 @@ export default function UploadPage() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all ${
-            isDragging 
-              ? 'border-primary-500 bg-primary-50' 
-              : 'border-gray-300 bg-white hover:border-gray-400'
+          className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors ${
+            isDragging
+              ? 'border-primary-500 bg-primary-50'
+              : 'border-gray-300 bg-white hover:border-primary-400'
           }`}
         >
-          <div className="w-20 h-20 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Upload className={`w-10 h-10 ${isDragging ? 'text-primary-600' : 'text-primary-500'}`} />
-          </div>
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            {isDragging ? 'Drop your files here' : 'Drag & drop your files'}
-          </h3>
-          <p className="text-gray-500 mb-6">
-            or <label className="text-primary-600 hover:text-primary-700 cursor-pointer font-medium">
-              browse files
-              <input
-                type="file"
-                accept=".pdf,.docx"
-                multiple
-                className="hidden"
-                onChange={handleFileSelect}
-              />
-            </label> from your computer
-          </p>
-          <p className="text-sm text-gray-400">
-            Supported formats: PDF, DOCX (Max 50MB per file)
-          </p>
+          <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-700 mb-2">
+            Drag & drop your files here
+          </h2>
+          <p className="text-gray-500 mb-6">or click to browse files</p>
+          <label className="cursor-pointer">
+            <span className="bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition font-medium">
+              Browse Files
+            </span>
+            <input
+              type="file"
+              multiple
+              accept=".pdf,.docx"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+          </label>
+          <p className="text-sm text-gray-400 mt-4">Supports PDF and DOCX files</p>
         </div>
 
         {/* File List */}
         {files.length > 0 && (
-          <div className="mt-8">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">
-              Selected Files ({files.length})
-            </h3>
-            <div className="space-y-3">
-              {files.map((file, index) => (
-                <div 
-                  key={index}
-                  className="flex items-center justify-between bg-white p-4 rounded-lg border border-gray-200"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                      <File className="w-5 h-5 text-gray-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{file.name}</p>
-                      <p className="text-sm text-gray-500">
-                        {(file.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                    </div>
+          <div className="mt-6 bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+            {files.map((file, index) => (
+              <div key={index} className="flex items-center justify-between px-6 py-4">
+                <div className="flex items-center gap-3">
+                  <File className="w-5 h-5 text-primary-600" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{file.name}</p>
+                    <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</p>
                   </div>
-                  {!isUploading && (
-                    <button
-                      onClick={() => removeFile(index)}
-                      className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-red-500 transition"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  )}
                 </div>
-              ))}
-            </div>
-
-            {/* Upload Progress */}
-            {isUploading && (
-              <div className="mt-6">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-600">Uploading and processing...</span>
-                  <span className="text-primary-600 font-medium">{uploadProgress}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-primary-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-                <p className="text-sm text-gray-500 mt-2">
-                  Extracting questions and generating answers from your knowledge base...
-                </p>
+                <button
+                  onClick={() => removeFile(index)}
+                  className="text-gray-400 hover:text-red-500 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex gap-4 mt-6">
-              <button
-                onClick={() => setFiles([])}
-                disabled={isUploading}
-                className="flex-1 px-6 py-3 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition disabled:opacity-50"
-              >
-                Clear All
-              </button>
-              <button
-                onClick={handleUpload}
-                disabled={isUploading}
-                className="flex-1 px-6 py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition disabled:opacity-50"
-              >
-                {isUploading ? 'Processing...' : 'Upload & Analyze'}
-              </button>
-            </div>
+            ))}
           </div>
         )}
 
-        {/* Tips */}
-        <div className="mt-12 bg-blue-50 rounded-xl p-6">
-          <h4 className="font-semibold text-blue-900 mb-3">Pro Tips</h4>
-          <ul className="space-y-2 text-sm text-blue-800">
-            <li>• Make sure your knowledge base is up to date for better answer accuracy</li>
-            <li>• Scanned PDFs may take longer to process</li>
-            <li>• You can upload multiple questionnaires at once</li>
-            <li>• Questions with low confidence scores will be flagged for manual review</li>
-          </ul>
-        </div>
+        {/* Upload Button */}
+        {files.length > 0 && !isUploading && (
+          <div className="mt-6 text-center">
+            <button
+              onClick={handleUpload}
+              className="bg-primary-600 text-white px-8 py-3 rounded-lg hover:bg-primary-700 transition font-medium text-lg"
+            >
+              Process {files.length} {files.length === 1 ? 'File' : 'Files'}
+            </button>
+          </div>
+        )}
+
+        {/* Upload Progress */}
+        {isUploading && (
+          <div className="mt-6 bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex justify-between text-sm text-gray-600 mb-2">
+              <span>Processing files...</span>
+              <span>{uploadProgress}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="bg-primary-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </main>
   )
