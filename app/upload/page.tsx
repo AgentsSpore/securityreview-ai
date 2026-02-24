@@ -2,8 +2,22 @@
 
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload, File, X, Shield, ArrowLeft } from 'lucide-react'
+import { Upload, File, X, Shield, ArrowLeft, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
+
+// File validation constants
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+const ALLOWED_TYPES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]
+
+const ALLOWED_EXTENSIONS = ['.pdf', '.docx']
+
+interface UploadError {
+  filename: string
+  message: string
+}
 
 export default function UploadPage() {
   const router = useRouter()
@@ -11,6 +25,58 @@ export default function UploadPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [errors, setErrors] = useState<UploadError[]>([])
+
+  /**
+   * Validate file before adding to queue
+   */
+  const validateFile = (file: File): UploadError | null => {
+    // Check file size
+    if (file.size > MAX_FILE_SIZE) {
+      return {
+        filename: file.name,
+        message: `File exceeds maximum size of 10MB`,
+      }
+    }
+
+    // Check MIME type
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      return {
+        filename: file.name,
+        message: `Invalid file type: ${file.type}. Only PDF and DOCX are supported.`,
+      }
+    }
+
+    // Check extension matches MIME type (additional security)
+    const extension = file.name.toLowerCase().slice(-4)
+    if (!ALLOWED_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext))) {
+      return {
+        filename: file.name,
+        message: `File extension does not match allowed types`,
+      }
+    }
+
+    // PDF files should have .pdf extension
+    if (file.type === 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      return {
+        filename: file.name,
+        message: `PDF file must have .pdf extension`,
+      }
+    }
+
+    // DOCX files should have .docx extension
+    if (
+      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' &&
+      !file.name.toLowerCase().endsWith('.docx')
+    ) {
+      return {
+        filename: file.name,
+        message: `DOCX file must have .docx extension`,
+      }
+    }
+
+    return null
+  }
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -22,46 +88,140 @@ export default function UploadPage() {
     setIsDragging(false)
   }, [])
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-    
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(
-      file => file.type === 'application/pdf' || 
-              file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-              file.name.endsWith('.pdf') ||
-              file.name.endsWith('.docx')
-    )
-    
-    setFiles(prev => [...prev, ...droppedFiles])
-  }, [])
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      setIsDragging(false)
+
+      const droppedFiles = Array.from(e.dataTransfer.files)
+      const newErrors: UploadError[] = []
+      const validFiles: File[] = []
+
+      droppedFiles.forEach((file) => {
+        const error = validateFile(file)
+        if (error) {
+          newErrors.push(error)
+        } else {
+          validFiles.push(file)
+        }
+      })
+
+      if (newErrors.length > 0) {
+        setErrors((prev) => [...prev, ...newErrors])
+      }
+
+      if (validFiles.length > 0) {
+        setFiles((prev) => [...prev, ...validFiles])
+      }
+    },
+    []
+  )
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const selectedFiles = Array.from(e.target.files)
-      setFiles(prev => [...prev, ...selectedFiles])
+      const newErrors: UploadError[] = []
+      const validFiles: File[] = []
+
+      selectedFiles.forEach((file) => {
+        const error = validateFile(file)
+        if (error) {
+          newErrors.push(error)
+        } else {
+          validFiles.push(file)
+        }
+      })
+
+      if (newErrors.length > 0) {
+        setErrors((prev) => [...prev, ...newErrors])
+      }
+
+      if (validFiles.length > 0) {
+        setFiles((prev) => [...prev, ...validFiles])
+      }
+
+      // Reset input to allow selecting the same file again
+      e.target.value = ''
     }
   }, [])
 
   const removeFile = useCallback((index: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== index))
+    setFiles((prev) => prev.filter((_, i) => i !== index))
+  }, [])
+
+  const clearErrors = useCallback(() => {
+    setErrors([])
   }, [])
 
   const handleUpload = async () => {
     if (files.length === 0) return
-    
+
     setIsUploading(true)
-    
-    // Simulate upload progress
-    for (let i = 0; i <= 100; i += 10) {
-      await new Promise(resolve => setTimeout(resolve, 200))
-      setUploadProgress(i)
+    setErrors([])
+
+    try {
+      // Create FormData
+      const formData = new FormData()
+      files.forEach((file) => {
+        formData.append('files', file)
+      })
+
+      // Simulate upload progress
+      const progressInterval = setInterval(() => {
+        setUploadProgress((prev) => {
+          if (prev >= 90) {
+            clearInterval(progressInterval)
+            return 90
+          }
+          return prev + 10
+        })
+      }, 200)
+
+      // Call the secure API endpoint
+      const response = await fetch('/api/parse-document', {
+        method: 'POST',
+        body: formData,
+      })
+
+      clearInterval(progressInterval)
+      setUploadProgress(100)
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Upload failed')
+      }
+
+      const data = await response.json()
+
+      // Check for individual file errors
+      const failedFiles = data.results?.filter((r: { success: boolean }) => !r.success) || []
+      if (failedFiles.length > 0) {
+        setErrors(
+          failedFiles.map((f: { filename: string; error: string }) => ({
+            filename: f.filename,
+            message: f.error,
+          }))
+        )
+      }
+
+      // Navigate to review page if at least one file succeeded
+      const hasSuccess = data.results?.some((r: { success: boolean }) => r.success)
+      if (hasSuccess) {
+        setTimeout(() => {
+          router.push('/review/123')
+        }, 500)
+      }
+    } catch (error) {
+      console.error('Upload error:', error)
+      setErrors([
+        {
+          filename: 'Upload',
+          message: error instanceof Error ? error.message : 'Upload failed. Please try again.',
+        },
+      ])
+      setIsUploading(false)
+      setUploadProgress(0)
     }
-    
-    // Navigate to review page after upload
-    setTimeout(() => {
-      router.push('/review/123')
-    }, 500)
   }
 
   return (
@@ -86,132 +246,135 @@ export default function UploadPage() {
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">
-            Upload Security Questionnaire
-          </h1>
-          <p className="text-gray-600">
-            Upload your PDF or Word document and we'll extract the questions using AI
+          <h1 className="text-3xl font-bold text-gray-900 mb-4">Upload Security Questionnaire</h1>
+          <p className="text-lg text-gray-600">
+            Upload PDF or DOCX files to automatically extract and answer security questions
+          </p>
+          <p className="text-sm text-gray-500 mt-2">
+            Maximum file size: 10MB per file. PDF and DOCX formats only.
           </p>
         </div>
 
-        {/* Upload Area */}
+        {/* Error Display */}
+        {errors.length > 0 && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="font-medium text-red-800 mb-2">Upload errors:</h3>
+                <ul className="space-y-1">
+                  {errors.map((error, index) => (
+                    <li key={index} className="text-sm text-red-700">
+                      <span className="font-medium">{error.filename}:</span> {error.message}
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  onClick={clearErrors}
+                  className="mt-3 text-sm text-red-600 hover:text-red-800 underline"
+                >
+                  Clear errors
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Upload Zone */}
         <div
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all ${
-            isDragging 
-              ? 'border-primary-500 bg-primary-50' 
-              : 'border-gray-300 bg-white hover:border-gray-400'
+          className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors ${
+            isDragging
+              ? 'border-primary-500 bg-primary-50'
+              : 'border-gray-300 hover:border-gray-400'
           }`}
         >
-          <div className="w-20 h-20 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Upload className={`w-10 h-10 ${isDragging ? 'text-primary-600' : 'text-primary-500'}`} />
-          </div>
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            {isDragging ? 'Drop your files here' : 'Drag & drop your files'}
-          </h3>
-          <p className="text-gray-500 mb-6">
-            or <label className="text-primary-600 hover:text-primary-700 cursor-pointer font-medium">
-              browse files
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center">
+              <Upload className="w-8 h-8 text-primary-600" />
+            </div>
+            <div>
+              <p className="text-lg font-medium text-gray-900 mb-1">
+                Drag and drop your files here
+              </p>
+              <p className="text-sm text-gray-500 mb-4">or click to browse</p>
+            </div>
+            <label className="cursor-pointer">
               <input
                 type="file"
-                accept=".pdf,.docx"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 multiple
-                className="hidden"
                 onChange={handleFileSelect}
+                className="hidden"
               />
-            </label> from your computer
-          </p>
-          <p className="text-sm text-gray-400">
-            Supported formats: PDF, DOCX (Max 50MB per file)
-          </p>
+              <span className="inline-flex items-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-primary-700 transition">
+                Select Files
+              </span>
+            </label>
+          </div>
         </div>
 
         {/* File List */}
         {files.length > 0 && (
           <div className="mt-8">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
               Selected Files ({files.length})
             </h3>
             <div className="space-y-3">
               {files.map((file, index) => (
-                <div 
+                <div
                   key={index}
                   className="flex items-center justify-between bg-white p-4 rounded-lg border border-gray-200"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                      <File className="w-5 h-5 text-gray-600" />
-                    </div>
+                    <File className="w-5 h-5 text-gray-400" />
                     <div>
                       <p className="font-medium text-gray-900">{file.name}</p>
                       <p className="text-sm text-gray-500">
-                        {(file.size / 1024 / 1024).toFixed(2)} MB
+                        {(file.size / 1024).toFixed(1)} KB
+                        {file.type && ` • ${file.type}`}
                       </p>
                     </div>
                   </div>
-                  {!isUploading && (
-                    <button
-                      onClick={() => removeFile(index)}
-                      className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-red-500 transition"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => removeFile(index)}
+                    disabled={isUploading}
+                    className="p-2 text-gray-400 hover:text-red-600 transition disabled:opacity-50"
+                    aria-label={`Remove ${file.name}`}
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
               ))}
             </div>
 
-            {/* Upload Progress */}
-            {isUploading && (
-              <div className="mt-6">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-600">Uploading and processing...</span>
-                  <span className="text-primary-600 font-medium">{uploadProgress}%</span>
+            {/* Upload Button */}
+            <div className="mt-8">
+              {isUploading ? (
+                <div className="space-y-3">
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-primary-600 h-2 rounded-full transition-all"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-center text-sm text-gray-600">
+                    Processing {uploadProgress}%
+                  </p>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-primary-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-                <p className="text-sm text-gray-500 mt-2">
-                  Extracting questions and generating answers from your knowledge base...
-                </p>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex gap-4 mt-6">
-              <button
-                onClick={() => setFiles([])}
-                disabled={isUploading}
-                className="flex-1 px-6 py-3 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition disabled:opacity-50"
-              >
-                Clear All
-              </button>
-              <button
-                onClick={handleUpload}
-                disabled={isUploading}
-                className="flex-1 px-6 py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition disabled:opacity-50"
-              >
-                {isUploading ? 'Processing...' : 'Upload & Analyze'}
-              </button>
+              ) : (
+                <button
+                  onClick={handleUpload}
+                  className="w-full bg-primary-600 text-white py-4 rounded-xl font-semibold text-lg hover:bg-primary-700 transition"
+                >
+                  Upload and Process {files.length} File{files.length !== 1 ? 's' : ''}
+                </button>
+              )}
             </div>
           </div>
         )}
-
-        {/* Tips */}
-        <div className="mt-12 bg-blue-50 rounded-xl p-6">
-          <h4 className="font-semibold text-blue-900 mb-3">Pro Tips</h4>
-          <ul className="space-y-2 text-sm text-blue-800">
-            <li>• Make sure your knowledge base is up to date for better answer accuracy</li>
-            <li>• Scanned PDFs may take longer to process</li>
-            <li>• You can upload multiple questionnaires at once</li>
-            <li>• Questions with low confidence scores will be flagged for manual review</li>
-          </ul>
-        </div>
       </div>
     </main>
   )
