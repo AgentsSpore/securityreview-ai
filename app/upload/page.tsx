@@ -2,8 +2,10 @@
 
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload, File, X, Shield, ArrowLeft } from 'lucide-react'
+import { Upload, File, X, Shield, ArrowLeft, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB in bytes
 
 export default function UploadPage() {
   const router = useRouter()
@@ -11,6 +13,7 @@ export default function UploadPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [error, setError] = useState<string | null>(null)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -25,6 +28,7 @@ export default function UploadPage() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
+    setError(null)
     
     const droppedFiles = Array.from(e.dataTransfer.files).filter(
       file => file.type === 'application/pdf' || 
@@ -33,18 +37,51 @@ export default function UploadPage() {
               file.name.endsWith('.docx')
     )
     
-    setFiles(prev => [...prev, ...droppedFiles])
+    const validFiles: File[] = []
+    const oversizedFiles: string[] = []
+    
+    droppedFiles.forEach(file => {
+      if (file.size > MAX_FILE_SIZE) {
+        oversizedFiles.push(file.name)
+      } else {
+        validFiles.push(file)
+      }
+    })
+    
+    if (oversizedFiles.length > 0) {
+      setError(`File(s) exceed 50MB limit: ${oversizedFiles.join(', ')}`)
+    }
+    
+    setFiles(prev => [...prev, ...validFiles])
   }, [])
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
+      setError(null)
       const selectedFiles = Array.from(e.target.files)
-      setFiles(prev => [...prev, ...selectedFiles])
+      
+      const validFiles: File[] = []
+      const oversizedFiles: string[] = []
+      
+      selectedFiles.forEach(file => {
+        if (file.size > MAX_FILE_SIZE) {
+          oversizedFiles.push(file.name)
+        } else {
+          validFiles.push(file)
+        }
+      })
+      
+      if (oversizedFiles.length > 0) {
+        setError(`File(s) exceed 50MB limit: ${oversizedFiles.join(', ')}`)
+      }
+      
+      setFiles(prev => [...prev, ...validFiles])
     }
   }, [])
 
   const removeFile = useCallback((index: number) => {
     setFiles(prev => prev.filter((_, i) => i !== index))
+    setError(null)
   }, [])
 
   const handleUpload = async () => {
@@ -89,61 +126,65 @@ export default function UploadPage() {
           <h1 className="text-3xl font-bold text-gray-900 mb-4">
             Upload Security Questionnaire
           </h1>
-          <p className="text-gray-600">
-            Upload your PDF or Word document and we'll extract the questions using AI
+          <p className="text-lg text-gray-600">
+            Drag and drop your PDF or DOCX files, or click to browse
+          </p>
+          <p className="text-sm text-gray-500 mt-2">
+            Maximum file size: 50MB
           </p>
         </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+            <p className="text-red-700">{error}</p>
+          </div>
+        )}
 
         {/* Upload Area */}
         <div
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all ${
-            isDragging 
-              ? 'border-primary-500 bg-primary-50' 
+          className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
+            isDragging
+              ? 'border-primary-500 bg-primary-50'
               : 'border-gray-300 bg-white hover:border-gray-400'
           }`}
         >
-          <div className="w-20 h-20 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Upload className={`w-10 h-10 ${isDragging ? 'text-primary-600' : 'text-primary-500'}`} />
-          </div>
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            {isDragging ? 'Drop your files here' : 'Drag & drop your files'}
-          </h3>
-          <p className="text-gray-500 mb-6">
-            or <label className="text-primary-600 hover:text-primary-700 cursor-pointer font-medium">
-              browse files
-              <input
-                type="file"
-                accept=".pdf,.docx"
-                multiple
-                className="hidden"
-                onChange={handleFileSelect}
-              />
-            </label> from your computer
+          <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <p className="text-lg text-gray-600 mb-2">
+            {isDragging ? 'Drop files here' : 'Drag and drop files here'}
           </p>
-          <p className="text-sm text-gray-400">
-            Supported formats: PDF, DOCX (Max 50MB per file)
-          </p>
+          <p className="text-sm text-gray-500 mb-4">or</p>
+          <label className="inline-flex items-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition cursor-pointer">
+            <File className="w-4 h-4" />
+            Browse Files
+            <input
+              type="file"
+              multiple
+              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+          </label>
         </div>
 
         {/* File List */}
         {files.length > 0 && (
           <div className="mt-8">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
               Selected Files ({files.length})
             </h3>
             <div className="space-y-3">
               {files.map((file, index) => (
-                <div 
+                <div
                   key={index}
                   className="flex items-center justify-between bg-white p-4 rounded-lg border border-gray-200"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                      <File className="w-5 h-5 text-gray-600" />
-                    </div>
+                    <File className="w-8 h-8 text-primary-600" />
                     <div>
                       <p className="font-medium text-gray-900">{file.name}</p>
                       <p className="text-sm text-gray-500">
@@ -151,67 +192,27 @@ export default function UploadPage() {
                       </p>
                     </div>
                   </div>
-                  {!isUploading && (
-                    <button
-                      onClick={() => removeFile(index)}
-                      className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-red-500 transition"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => removeFile(index)}
+                    className="p-2 text-gray-400 hover:text-red-600 transition"
+                    disabled={isUploading}
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
               ))}
             </div>
 
-            {/* Upload Progress */}
-            {isUploading && (
-              <div className="mt-6">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-600">Uploading and processing...</span>
-                  <span className="text-primary-600 font-medium">{uploadProgress}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-primary-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-                <p className="text-sm text-gray-500 mt-2">
-                  Extracting questions and generating answers from your knowledge base...
-                </p>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex gap-4 mt-6">
-              <button
-                onClick={() => setFiles([])}
-                disabled={isUploading}
-                className="flex-1 px-6 py-3 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition disabled:opacity-50"
-              >
-                Clear All
-              </button>
-              <button
-                onClick={handleUpload}
-                disabled={isUploading}
-                className="flex-1 px-6 py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition disabled:opacity-50"
-              >
-                {isUploading ? 'Processing...' : 'Upload & Analyze'}
-              </button>
-            </div>
+            {/* Upload Button */}
+            <button
+              onClick={handleUpload}
+              disabled={isUploading}
+              className="w-full mt-6 bg-primary-600 text-white py-3 rounded-lg font-semibold hover:bg-primary-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isUploading ? `Uploading... ${uploadProgress}%` : `Upload ${files.length} File${files.length !== 1 ? 's' : ''}`}
+            </button>
           </div>
         )}
-
-        {/* Tips */}
-        <div className="mt-12 bg-blue-50 rounded-xl p-6">
-          <h4 className="font-semibold text-blue-900 mb-3">Pro Tips</h4>
-          <ul className="space-y-2 text-sm text-blue-800">
-            <li>• Make sure your knowledge base is up to date for better answer accuracy</li>
-            <li>• Scanned PDFs may take longer to process</li>
-            <li>• You can upload multiple questionnaires at once</li>
-            <li>• Questions with low confidence scores will be flagged for manual review</li>
-          </ul>
-        </div>
       </div>
     </main>
   )
